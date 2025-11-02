@@ -7,10 +7,44 @@
 
 import os
 import sys
+import subprocess
 from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()
+
+
+def get_proxy_config():
+    """获取代理配置"""
+    try:
+        # 方法1：从环境变量读取
+        http_proxy = os.getenv('http_proxy') or os.getenv('HTTP_PROXY')
+        if http_proxy:
+            return {
+                'http': http_proxy,
+                'https': http_proxy
+            }
+        
+        # 方法2：动态获取 Windows IP
+        result = subprocess.run(
+            ['ip', 'route', 'show', 'default'],
+            capture_output=True,
+            text=True
+        )
+        
+        for line in result.stdout.split('\n'):
+            if 'default via' in line:
+                ip = line.split()[2]
+                proxy_url = f'http://{ip}:7897'
+                return {
+                    'http': proxy_url,
+                    'https': proxy_url
+                }
+        
+        return None
+    except Exception as e:
+        print(f"   ⚠️ 获取代理配置失败: {e}")
+        return None
 
 
 def check_env_variables():
@@ -35,10 +69,18 @@ def check_env_variables():
     else:
         print(f"   ⚠️ BINANCE_API_SECRET: 未设置（公开数据不需要）")
 
+    # 检查代理配置
+    proxies = get_proxy_config()
+    if proxies:
+        print(f"   ✅ 代理配置: {proxies.get('http', 'N/A')}")
+    else:
+        print(f"   ⚠️ 代理配置: 未设置")
+
     print("\n💡 说明:")
     print("   - 获取公开市场价格：不需要API密钥")
     print("   - 查询账户信息/下单：需要API密钥")
     print("   - 当前测试只获取价格，可以不配置密钥")
+    print("   - 国内访问币安需要代理")
 
     return True
 
@@ -68,9 +110,18 @@ def test_binance_connection_public():
     try:
         from binance.spot import Spot
 
-        # 初始化客户端（不传API密钥）
+        # 获取代理配置
+        proxies = get_proxy_config()
+        
+        # 初始化客户端（不传API密钥，但传入代理）
         print("\n1️⃣ 初始化币安客户端（公开模式）...")
-        client = Spot()
+        if proxies:
+            print(f"   🔄 使用代理: {proxies.get('http', 'N/A')}")
+            client = Spot(proxies=proxies)
+        else:
+            print("   ⚠️ 未使用代理（可能无法连接）")
+            client = Spot()
+        
         print("   ✅ 客户端初始化成功")
 
         # 测试服务器时间（最简单的连接测试）
@@ -89,9 +140,13 @@ def test_binance_connection_public():
     except Exception as e:
         print(f"   ❌ 连接失败: {e}")
         print("\n💡 可能的原因:")
-        print("   1. 网络问题（国内可能需要代理）")
+        print("   1. 代理未启动或配置错误")
         print("   2. 币安服务暂时不可用")
         print("   3. 防火墙限制")
+        print("\n💡 解决方法:")
+        print("   1. 确保 Clash Verge 正在运行")
+        print("   2. 运行: source ~/.bashrc  # 加载代理环境变量")
+        print("   3. 测试代理: curl --proxy http://172.18.48.1:7897 https://api.binance.com/api/v3/time")
         return False
 
 
@@ -113,8 +168,16 @@ def test_binance_connection_authenticated():
     try:
         from binance.spot import Spot
 
+        # 获取代理配置
+        proxies = get_proxy_config()
+
         print("\n1️⃣ 初始化币安客户端（认证模式）...")
-        client = Spot(api_key=api_key, api_secret=api_secret)
+        if proxies:
+            print(f"   🔄 使用代理: {proxies.get('http', 'N/A')}")
+            client = Spot(api_key=api_key, api_secret=api_secret, proxies=proxies)
+        else:
+            client = Spot(api_key=api_key, api_secret=api_secret)
+        
         print("   ✅ 客户端初始化成功")
 
         print("\n2️⃣ 测试账户连接...")
@@ -142,7 +205,10 @@ def test_get_single_price():
 
     try:
         from binance.spot import Spot
-        client = Spot()  # 公开数据不需要密钥
+        
+        # 获取代理配置
+        proxies = get_proxy_config()
+        client = Spot(proxies=proxies) if proxies else Spot()
 
         # 测试BTC价格
         symbol = 'BTCUSDT'
@@ -171,7 +237,10 @@ def test_get_multiple_prices():
 
     try:
         from binance.spot import Spot
-        client = Spot()  # 公开数据不需要密钥
+        
+        # 获取代理配置
+        proxies = get_proxy_config()
+        client = Spot(proxies=proxies) if proxies else Spot()
 
         # 测试多个代币
         symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
@@ -209,7 +278,10 @@ def test_get_all_prices():
 
     try:
         from binance.spot import Spot
-        client = Spot()
+        
+        # 获取代理配置
+        proxies = get_proxy_config()
+        client = Spot(proxies=proxies) if proxies else Spot()
 
         print("\n1️⃣ 获取所有交易对价格...")
 
@@ -241,7 +313,10 @@ def test_error_handling():
 
     try:
         from binance.spot import Spot
-        client = Spot()
+        
+        # 获取代理配置
+        proxies = get_proxy_config()
+        client = Spot(proxies=proxies) if proxies else Spot()
 
         # 测试无效的交易对
         print("\n1️⃣ 测试无效交易对...")
@@ -344,5 +419,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ 测试过程出错: {e}")
         import traceback
-
         traceback.print_exc()
